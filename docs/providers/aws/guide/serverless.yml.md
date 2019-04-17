@@ -61,7 +61,7 @@ provider:
       '/users/create': xxxxxxxxxx
     apiKeySourceType: HEADER # Source of API key for usage plan. HEADER or AUTHORIZER.
     minimumCompressionSize: 1024 # Compress response when larger than specified size in bytes (must be between 0 and 10485760)
-
+    description: Some Description # optional description for the API Gateway stage deployment
   usagePlan: # Optional usage plan configuration
     quota:
       limit: 5000
@@ -120,6 +120,9 @@ provider:
   tags: # Optional service wide function tags
     foo: bar
     baz: qux
+  tracing:
+    apiGateway: true
+    lambda: true # optional, can be true (true equals 'Active'), 'Active' or 'PassThrough'
 
 package: # Optional deployment packaging configuration
   include: # Specify the directories and files which should be included in the deployment package
@@ -166,6 +169,7 @@ functions:
       individually: true # Enables individual packaging for specific function. If true you must provide package for each function. Defaults to false
     layers: # An optional list Lambda Layers to use
       - arn:aws:lambda:region:XXXXXX:layer:LayerName:Y # Layer Version ARN
+    tracing: Active # optional, can be 'Active' or 'PassThrough' (overwrites the one defined on the provider level)
     events: # The Events that trigger this Function
       - http: # This creates an API Gateway HTTP endpoint which can be used to trigger this function.  Learn more in "events/apigateway"
           path: users/create # Path for this endpoint
@@ -178,6 +182,7 @@ functions:
             resultTtlInSeconds: 0
             identitySource: method.request.header.Authorization
             identityValidationExpression: someRegex
+            type: token # token or request. Determines input to the authorier function, called with the auth token or the entire request event. Defaults to token
       - websocket:
           route: $connect
           authorizer:
@@ -197,12 +202,17 @@ functions:
           description: a description of my scheduled event's purpose
           rate: rate(10 minutes)
           enabled: false
+          # Note, you can use only one of input, inputPath, or inputTransformer
           input:
             key1: value1
             key2: value2
             stageParams:
               stage: dev
           inputPath: '$.stageVariables'
+          inputTransformer:
+            inputPathsMap:
+              eventTime: '$.time'
+            inputTemplate: '{"time": <eventTime>, "key1": "value1"}'
       - sns:
           topicName: aggregate
           displayName: Data aggregation pipeline
@@ -235,19 +245,35 @@ functions:
             detail:
               state:
                 - pending
-          # Note: you can either use "input" or "inputPath"
+          # Note, you can use only one of input, inputPath, or inputTransformer
           input:
             key1: value1
             key2: value2
             stageParams:
               stage: dev
           inputPath: '$.stageVariables'
+          inputTransformer:
+            inputPathsMap:
+              eventTime: '$.time'
+            inputTemplate: '{"time": <eventTime>, "key1": "value1"}'
       - cloudwatchLog:
           logGroup: '/aws/lambda/hello'
           filter: '{$.userIdentity.type = Root}'
       - cognitoUserPool:
           pool: MyUserPool
           trigger: PreSignUp
+
+layers:
+  hello: # A Lambda layer
+    path: layer-dir # required, path to layer contents on disk
+    name: ${self:provider.stage}-layerName # optional, Deployed Lambda layer name
+    description: Description of what the lambda layer does # optional, Description to publish to AWS
+    compatibleRuntimes: # optional, a list of runtimes this layer is compatible with
+      - python3.7
+    licenseInfo: GPLv3 # optional, a string specifying license information
+    allowedAccounts: # optional, a list of AWS account IDs allowed to access this layer.
+      - '*'
+    retain: false # optional, false by default. If true, layer versions are not deleted as new ones are created
 
 # The "Resources" your "Functions" use.  Raw AWS CloudFormation goes in here.
 resources:
